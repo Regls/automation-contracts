@@ -1,0 +1,18 @@
+# Variáveis de ambiente (Chaves e Tokens)
+.env
+
+# Ambiente Virtual do Python
+venv/
+.venv/
+env/
+
+# Cache do Python (Arquivos compilados locais)
+**/__pycache__/
+*.pyc
+
+# PDFs gerados localmente pelos seus testes (para não entupir o repositório)
+*.pdf
+
+# Arquivos do VS Code ou IDE
+.vscode/
+.idea/
