@@ -6,6 +6,56 @@ from app.services.pdf_service import generate_contract_pdf
 from app.services.zapsign_service import send_contract_to_zapsign
 from app.services.email_service import send_notification_email
 
+EMAIL_QUEUE = asyncio.Queue()
+
+async def email_consumer_worker(queue: asyncio.Queue):
+    """Consumer that works the queue in parelism with Mailtrap"""
+    print("👷 [WORKER] E-mail consumer initializing and waiting for tasks...")
+
+    while True:
+        email_job = await queue.get()
+
+        signers = email_job.get("signers")
+        client_name = email_job.get("name")
+
+        print(f"\n📧 [QUEUE] Processing e-mails for {client_name}")
+        try:
+            async with aiosmtplib.SMTP(
+                hostname=settings.MAILTRAP_HOST,
+                port=settings.MAILTRAP_PORT,
+                use_tls=False
+            ) as server:
+                await server.login(settings.MAILTRAP_USER, settings.MAILTRAP_PASSWORD)
+
+                for index, signer in enumerate(signers):
+                    signer_name = signer.get("name")
+                    sign_url = signer.get("sign_url")
+                    signer_email = signer.get("email")
+                    
+                    print(f"   👤 Sending to: {signer_name} ➔  {signer_email}")
+                    
+                    await send_notification_email(
+                        client=server,
+                        to_email=signer_email,
+                        recipient_name=signer_name,
+                        sign_url=sign_url
+                    )
+                    
+                    if index < len(signers) - 1:
+                        print("⏳ [QUEUE] Waiting 12s to avoid Mailtrap ratelimit...")
+                        await asyncio.sleep(12)
+            print(f"🎉 [QUEUE] Batch for {client_name} completed sucessfully!")
+            # Check if there are more jobs waiting in the queue
+            if queue.qsize() > 0:
+                print(f"⏳ [QUEUE] {queue.qsize()} task(s) remaining. Waiting 15s for server cooldown...")
+                await asyncio.sleep(15)
+            
+        except Exception as e:
+            print(f"❌ [QUEUE] Critical error in SMTP worker: {e}")
+        finally:
+            # Informa à fila que a tarefa atual foi concluída
+            queue.task_done()
+
 async def handle_pdf_pipeline(name: str, email: str, number: str, address: str):
     """Worker that runs outside the websocket thread"""
     try:
@@ -20,34 +70,14 @@ async def handle_pdf_pipeline(name: str, email: str, number: str, address: str):
         )
 
         signers = zapsign_doc.get("signers", [])
-        print("\n🔗 [SIGN LINKS GENERATED]:")
+        print(f"✨ [PIPELINE] ZapSign generated {len(signers)} links to {name}.")
 
-        async with aiosmtplib.SMTP(
-            hostname=settings.MAILTRAP_HOST,
-            port=settings.MAILTRAP_PORT,
-            use_tls=False
-        ) as server:
-            print("🔓 [SMTP] Connected to Mailtrap")
-
-            await server.login(settings.MAILTRAP_USER, settings.MAILTRAP_PASSWORD) 
-
-            for index, signer in enumerate(signers):
-                signer_name = signer.get("name")
-                sign_url = signer.get("sign_url")
-                signer_email = signer.get("email")
-                print(f"   👤 {signer_name} ➔  {sign_url}")
-
-                await send_notification_email(
-                    client=server,
-                    to_email=signer_email,
-                    recipient_name=signer_name,
-                    sign_url=sign_url
-                )
-                if index < len(signers) - 1:
-                    print("⏳ [PIPELINE] Aguardando 15s antes do próximo envio...")
-                    await asyncio.sleep(15)
-        print("🎉 [PIPELINE] All operations completed successfully! Closing SMTP connection...")
-        await server.quit()
+        job_data = {
+            "signers": signers,
+            "name": name
+        }
+        await EMAIL_QUEUE.put(job_data)
+        print(f"📨 [PIPELINE] E-mails enqueued for {name}.")
 
     except Exception as e:
         print(f"❌ [Error PIPELINE]: {e}")
@@ -73,19 +103,21 @@ def on_database_insert(payload):
 async def realtime_listener():
     settings.validate()
 
+    asyncio.create_task(email_consumer_worker(EMAIL_QUEUE))
+
     supabase: AsyncClient = await create_async_client(
         settings.SUPABASE_URL,
         settings.SUPABASE_SERVICE_KEY
     )
 
     channel = supabase.channel("realtime_forms_channel")
-
     channel.on_postgres_changes(
         "INSERT",
         on_database_insert,
         table="response-forms1",
         schema="public",
     )
+
     def on_subscribe(status, err):
         status_str = str(status)
 
