@@ -1,8 +1,10 @@
 import asyncio
+import aiosmtplib
 from supabase import create_async_client, AsyncClient
 from app.config.settings import settings
 from app.services.pdf_service import generate_contract_pdf
 from app.services.zapsign_service import send_contract_to_zapsign
+from app.services.email_service import send_notification_email
 
 async def handle_pdf_pipeline(name: str, email: str, number: str, address: str):
     """Worker that runs outside the websocket thread"""
@@ -17,11 +19,35 @@ async def handle_pdf_pipeline(name: str, email: str, number: str, address: str):
             client_email=email
         )
 
+        signers = zapsign_doc.get("signers", [])
         print("\n🔗 [SIGN LINKS GENERATED]:")
-        for signer in zapsign_doc.get("signers", []):
-            signer_name = signer.get("name")
-            sign_url = signer.get("sign_url")
-            print(f"   👤 {signer_name} ➔  {sign_url}")
+
+        async with aiosmtplib.SMTP(
+            hostname=settings.MAILTRAP_HOST,
+            port=settings.MAILTRAP_PORT,
+            use_tls=False
+        ) as server:
+            print("🔓 [SMTP] Connected to Mailtrap")
+
+            await server.login(settings.MAILTRAP_USER, settings.MAILTRAP_PASSWORD) 
+
+            for index, signer in enumerate(signers):
+                signer_name = signer.get("name")
+                sign_url = signer.get("sign_url")
+                signer_email = signer.get("email")
+                print(f"   👤 {signer_name} ➔  {sign_url}")
+
+                await send_notification_email(
+                    client=server,
+                    to_email=signer_email,
+                    recipient_name=signer_name,
+                    sign_url=sign_url
+                )
+                if index < len(signers) - 1:
+                    print("⏳ [PIPELINE] Aguardando 15s antes do próximo envio...")
+                    await asyncio.sleep(15)
+        print("🎉 [PIPELINE] All operations completed successfully! Closing SMTP connection...")
+        await server.quit()
 
     except Exception as e:
         print(f"❌ [Error PIPELINE]: {e}")

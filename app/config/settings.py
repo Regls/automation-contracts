@@ -8,6 +8,10 @@ class Settings:
     SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY")
     ZAPSIGN_URL: str = os.getenv("ZAPSIGN_URL")
     ZAPSIGN_API_KEY: str = os.getenv("ZAPSIGN_API_KEY")
+    MAILTRAP_HOST: str = os.getenv("MAILTRAP_SMTP_HOST")
+    MAILTRAP_PORT: int = int(os.getenv("MAILTRAP_SMTP_PORT", 2525))
+    MAILTRAP_USER: str = os.getenv("MAILTRAP_SMTP_USER")
+    MAILTRAP_PASSWORD: str = os.getenv("MAILTRAP_SMTP_PASSWORD")
 
     @classmethod
     def validate(cls):
@@ -15,5 +19,7 @@ class Settings:
             raise ValueError("❌ Environment variables for supabase are not set")
         if not cls.ZAPSIGN_URL or not cls.ZAPSIGN_API_KEY:
             raise ValueError("❌ Environment variables for zapsign are not set")
+        if not cls.MAILTRAP_HOST or not cls.MAILTRAP_PORT or not cls.MAILTRAP_USER or not cls.MAILTRAP_PASSWORD:
+            raise ValueError("❌ Environment variables for mailtrap are not set")
 
 settings = Settings()
