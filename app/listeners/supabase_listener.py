@@ -2,6 +2,7 @@ import asyncio
 from supabase import create_async_client, AsyncClient
 from app.config.settings import settings
 from app.services.pdf_service import generate_contract_pdf
+from app.services.zapsign_service import send_contract_to_zapsign
 
 async def handle_pdf_pipeline(name: str, email: str, number: str, address: str):
     """Worker that runs outside the websocket thread"""
@@ -9,6 +10,19 @@ async def handle_pdf_pipeline(name: str, email: str, number: str, address: str):
         await asyncio.sleep(0.5)
         output_file = generate_contract_pdf(name, email, number, address)
         print(f"📄 [PIPELINE] PDF generated: ./contratos/{output_file}")
+
+        zapsign_doc = send_contract_to_zapsign(
+            file_path=output_file,
+            client_name=name,
+            client_email=email
+        )
+
+        print("\n🔗 [SIGN LINKS GENERATED]:")
+        for signer in zapsign_doc.get("signers", []):
+            signer_name = signer.get("name")
+            sign_url = signer.get("sign_url")
+            print(f"   👤 {signer_name} ➔  {sign_url}")
+
     except Exception as e:
         print(f"❌ [Error PIPELINE]: {e}")
 
