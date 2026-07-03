@@ -1,0 +1,63 @@
+services:
+  evolution-api:
+    image: atendai/evolution-api:latest
+    container_name: evolution_api_container
+    restart: always
+    ports:
+      - "8084:8080"
+    dns:
+      - 8.8.8.8
+    depends_on:
+      - redis
+    environment:
+      - SERVER_URL=${EVOLUTION_API_URL}
+      - ENV=PRODUCTION
+      - CORS_ORIGIN=*
+      - CORS_METHODS=GET,POST,PUT,DELETE
+      
+      - AUTHENTICATION_TYPE=apikey
+      - AUTHENTICATION_API_KEY=${EVOLUTION_API_PASSWORD}
+
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=${SUPABASE_POOLER_URL}
+      - DATABASE_SAVE_DATA_INSTANCE=true
+      - DATABASE_SAVE_DATA_NEW_MESSAGE=false
+      
+      - CACHE_LOCAL_ENABLED=false
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://evolution_redis:6379/1
+      - CACHE_REDIS_PREFIX_KEY=evolution_v2
+      - CACHE_REDIS_SAVE_INSTANCES=false
+
+      - DELAY_MESSAGES=1000
+      - WEBHOOK_GLOBAL_ENABLED=false
+
+      - CONFIG_SESSION_PHONE_CLIENT=Evolution API
+      - CONFIG_SESSION_PHONE_NAME=Chrome
+      - CONFIG_SESSION_PHONE_VERSION=2.3000.1042123743
+      - CONFIG_SESSION_PHONE_VERSION=2.3000.1042123743
+    volumes:
+      - ./evolution_instances:/evolution/instances
+    networks:
+      - evolution_net
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: evolution_redis
+    restart: always
+    command: >
+      redis-server --port 6379 --appendonly yes
+    volumes:
+      - redis-data:/data
+    networks:
+      - evolution_net
+    expose:
+     - "6379"
+
+volumes:
+    redis-data:
+
+networks:
+  evolution_net:
+    driver: bridge

@@ -1,6 +1,5 @@
 import asyncio
-from app.services.pdf_service import generate_contract_pdf
-from app.services.zapsign_service import send_contract_to_zapsign
+from app.services import generate_contract_pdf, send_contract_to_zapsign, send_whatsapp_notification
 from app.queue import EMAIL_QUEUE
 
 
@@ -19,6 +18,24 @@ async def handle_pdf_pipeline(name: str, email: str, number: str, address: str):
 
         signers = zapsign_doc.get("signers", [])
         print(f"✨ [PIPELINE] ZapSign generated {len(signers)} links to {name}.")
+
+        client_sign_url = None
+        for signer in signers:
+            if signer.get("email") == email:
+                client_sign_url = signer.get("sign_url")
+                break
+        
+        if client_sign_url and number:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                send_whatsapp_notification,
+                number,
+                name,
+                client_sign_url
+            )
+        else:
+            print("⚠️ [PIPELINE] Could not send WhatsApp: client link or phone number missing.")
 
         job_data = {
             "signers": signers,
